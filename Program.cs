@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.CommandLine;
 using System.Text.RegularExpressions;
 using System.Text.Json;
@@ -46,9 +46,9 @@ class ImageInfo {
 
 class ChangeWallpaper {
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    static extern Int32 SystemParametersInfo(UInt32 action, UInt32 uParam, String vParam, UInt32 winIni);
+    static extern int SystemParametersInfo(uint action, uint uParam, string vParam, uint winIni);
 
-    public static void SetWallpaper(String path, String style) {
+    public static void SetWallpaper(string path, string style) {
         RegistryKey? key = Registry.CurrentUser.OpenSubKey(@"Control Panel\Desktop", true);
 
         key.SetValue(@"WallpaperStyle", 0.ToString()); // Default is Center
@@ -60,9 +60,8 @@ class ChangeWallpaper {
         else if (style == "fit") {
             key.SetValue(@"WallpaperStyle", 6.ToString());
         }
-        else if (style == "span") // Windows 8 or newer only!
-        {
-            key.SetValue(@"WallpaperStyle", 22.ToString());
+        else if (style == "span") {
+            key.SetValue(@"WallpaperStyle", 22.ToString());  // Windows 8 or newer only!
         }
         else if (style == "stretch") {
             key.SetValue(@"WallpaperStyle", 2.ToString());
@@ -71,31 +70,32 @@ class ChangeWallpaper {
             key.SetValue(@"TileWallpaper", 1.ToString());
         }
 
-        SystemParametersInfo(0x14, 0, path, 0x01 | 0x02);
+        _ = SystemParametersInfo(20, 0, path, 1 | 2);
     }
 }
 
 class Program {
     struct Arguments {
-        public string Param;
-        public bool IsJPEG, ChangeWallpaper;
-        public int Interval;
+        public string param, style;
+        public bool isJPEG, changeWallpaper;
+        public int interval;
 
-        public Arguments(string param, bool isJPEG, bool changeWallpaper, int interval) {
-            Param = param;
-            IsJPEG = isJPEG;
-            ChangeWallpaper = changeWallpaper;
-            Interval = interval;
+        public Arguments(string vParam, bool vIsJPEG, bool vChangeWallpaper, string vStyle, int vInterval) {
+            param = vParam;
+            isJPEG = vIsJPEG;
+            changeWallpaper = vChangeWallpaper;
+            style = vStyle;
+            interval = vInterval;
         }
     }
 
     static readonly HttpClient client = new();
 
     static async Task FetchImage(Arguments arguments) {
-        try {
-            string URL = $"https://konachan.com/post.json?{arguments.Param}";
-            Console.WriteLine($"URL: {URL}\n");
+        string URL = $"https://konachan.com/post.json?{arguments.param}";
+        Console.WriteLine($"URL: {URL}\n");
 
+        try {
             HttpResponseMessage response = await client.GetAsync(URL);
             response.EnsureSuccessStatusCode();
 
@@ -103,7 +103,7 @@ class Program {
             foreach (var element in data) {
                 ImageInfo image = JsonSerializer.Deserialize<ImageInfo>(element);
 
-                string? imageURL = arguments.IsJPEG ? image.jpeg_url : image.file_url;
+                string? imageURL = arguments.isJPEG ? image.jpeg_url : image.file_url;
 
                 string? imageName = $"{UrlDecode(imageURL!).Split("/")[^1]}";
                 string fileName = Regex.Replace(imageName, @"[<>/\|?:*]", " ");
@@ -117,10 +117,12 @@ class Program {
                 File.WriteAllBytes(filePath, await client.GetByteArrayAsync(imageURL));
                 Console.WriteLine($"File written: {filePath}\n");
 
-                ChangeWallpaper.SetWallpaper(filePath, "center");
-                Console.WriteLine($"Wallpaper changed: {filePath}\n");
+                if (arguments.changeWallpaper == true) {
+                    ChangeWallpaper.SetWallpaper(filePath, "center");
+                    Console.WriteLine($"Wallpaper changed: {filePath}\n");
 
-                await Task.Delay(arguments.Interval);
+                    await Task.Delay(arguments.interval);
+                }
             }
         }
         catch (HttpRequestException e) {
@@ -129,19 +131,22 @@ class Program {
     }
 
     static async Task Main(string[] args) {
-        var Interval = new Option<int>("--interval", () => 60);
-        var ChangeWallpaper = new Option<bool>("--change", () => false);
-        var IsJPEG = new Option<bool>("--isJPEG", () => false); IsJPEG.AddAlias("j");
-        var Page = new Option<int>("--page", () => 1);
-        var Limit = new Option<int>("--limit", () => 1); Limit.AddAlias("l");
-        var Tags = new Option<string>("--tags", () => ""); Tags.AddAlias("t");
-        var rootCommand = new RootCommand("App") { Interval, ChangeWallpaper, IsJPEG, Page, Limit, Tags };
+        var interval = new Option<int>("--interval", () => 60, "Set interval (seconds).");
+        var changeWallpaper = new Option<bool>("--change", () => false);
+        var style = new Option<string>("--style", () => "center", "Set style.");
+        var isJPEG = new Option<bool>("--jpeg", () => false, "Whether to use JPEG or not.");
+        var page = new Option<int>("--page", () => 1, "Set page.");
+        var limit = new Option<int>("--limit", () => 1, "Set a limited amount of requests."); limit.AddAlias("l");
+        var tags = new Option<string>("--tags", () => "", "Set tags."); tags.AddAlias("t");
 
-        rootCommand.SetHandler(async (interval, changeWallpaper, isJPEG, page, limit, tags) => {
-            Arguments arguments = new($"page={page}&limit={limit}&tags={tags}", isJPEG, changeWallpaper, interval * 1000);
-            Console.WriteLine($"Interval: {arguments.Interval} ms\nChange Wallpaper: {arguments.ChangeWallpaper}\nisJPEG: {arguments.IsJPEG}\n");
+        var rootCommand = new RootCommand() { changeWallpaper, interval, isJPEG, limit, page, style, tags };
+
+        rootCommand.SetHandler(async (vChangeWallpaper, vInterval, vIsJPEG, vLimit, vPage, vStyle, vTags) => {
+            Arguments arguments = new($"page={vPage}&limit={vLimit}&tags={vTags}", vIsJPEG, vChangeWallpaper, vStyle, vInterval * 1000);
+            Console.WriteLine($"Interval: {arguments.interval / 1000}s\nChange Wallpaper: {arguments.changeWallpaper}\nUse JPEG: {arguments.isJPEG}\n");
+
             await FetchImage(arguments);
-        }, Interval, ChangeWallpaper, IsJPEG, Page, Limit, Tags);
+        }, changeWallpaper, interval, isJPEG, limit, page, style, tags);
 
         await rootCommand.InvokeAsync(args);
     }
