@@ -132,7 +132,7 @@ class Program {
 
     static async Task Main(string[] args) {
         var interval = new Option<int>("--interval", () => 60, "Set interval (seconds).");
-        var changeWallpaper = new Option<bool>("--change", () => false);
+        var changeWallpaper = new Option<bool>("--change", () => false, "Change wallpaper.");
         var style = new Option<string>("--style", () => "center", "Set style.");
         var isJPEG = new Option<bool>("--jpeg", () => false, "Whether to use JPEG or not.");
         var page = new Option<int>("--page", () => 1, "Set page.");
